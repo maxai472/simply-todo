@@ -151,57 +151,56 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
     Ok(())
 }
 
+// --- List helpers ---
+fn toggle_state(app_state: & mut AppState, rows: &[Row]) {
+    if let Some(index) = app_state.list_state.selected() {
+        if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
+            item.is_done = !item.is_done;
+        }
+    }
+}
+
+fn expand_task(app_state: & mut AppState, rows: &[Row], expand: bool) {
+    if let Some(index) = app_state.list_state.selected() {
+        if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
+            item.expanded = expand;
+        }
+    }
+}
+
+fn delete_task(app_state: &mut AppState) {
+    if let Some(index) = app_state.list_state.selected() {
+        app_state.items.remove(index);
+    }
+}
+
 fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
     let rows = build_rows(&app_state.items);
     match key.code {
-        event::KeyCode::Esc => {
-            return true;
-        }
         event::KeyCode::Tab => {
             app_state.active_window = Windows::Input;
         }
-        event::KeyCode::Enter => {
-            if let Some(index) = app_state.list_state.selected() {
-                if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
-                    item.is_done = !item.is_done;
-                }
-            }
+        event::KeyCode::Up | event::KeyCode::Char('k') => {
+            app_state.list_state.select_previous();
         }
-        event::KeyCode::Right => {
-            if let Some(index) = app_state.list_state.selected() {
-                if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
-                    item.expanded = true;
-                }
-            }
+        event::KeyCode::Down | event::KeyCode::Char('j') => {
+            app_state.list_state.select_next();
         }
-        event::KeyCode::Left => {
-            if let Some(index) = app_state.list_state.selected() {
-                if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index)  {
-                    item.expanded = false;
-                }
-            }
+        event::KeyCode::Esc | event::KeyCode::Char('q') => {
+            return true;
+        }
+        event::KeyCode::Enter | event::KeyCode::Char('x') => {
+            toggle_state(app_state, &rows);
+        }
+        event::KeyCode::Right | event::KeyCode::Char('l') => {
+            expand_task(app_state, &rows, true);
+        }
+        event::KeyCode::Left | event::KeyCode::Char('h') => {
+            expand_task(app_state, &rows, false);
         }
         event::KeyCode::Char(char) => match char {
-            'q' => {
-                return true;
-            }
-            'j' => {
-                app_state.list_state.select_next();
-            }
-            'k' => {
-                app_state.list_state.select_previous();
-            }
-            'x' => {
-                if let Some(index) = app_state.list_state.selected() {
-                    if let Some(item) =  selected_item_mut(&mut app_state.items, &rows, index) {
-                        item.is_done = !item.is_done;
-                    }
-                }
-            }
             'd' => {
-                if let Some(index) = app_state.list_state.selected() {
-                    app_state.items.remove(index);
-                }
+                delete_task(app_state);
             }
             'a' => {
                 app_state.active_window = Input;
@@ -215,8 +214,9 @@ fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
 }
 
 fn handle_input(key: KeyEvent, app_state: &mut AppState) -> FormAction {
+    let rows = build_rows(&app_state.items);
     match (key.code, key.modifiers) {
-        (event::KeyCode::Esc, _) => {
+        (event::KeyCode::Esc, _) | (event::KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             return FormAction::Escape;
         }
         (event::KeyCode::Tab, _) => {
@@ -225,11 +225,11 @@ fn handle_input(key: KeyEvent, app_state: &mut AppState) -> FormAction {
         (event::KeyCode::Backspace, _) => {
             app_state.input_value.pop();
         }
-        (event::KeyCode::Char('a'), event::KeyModifiers::CONTROL) => {
-            return FormAction::SubmitSubTask;
-        }
         (event::KeyCode::Enter, _) => {
             return FormAction::Submit;
+        }
+        (event::KeyCode::Char('a'), event::KeyModifiers::CONTROL) => {
+            return FormAction::SubmitSubTask;
         }
         (event::KeyCode::Char('n'), KeyModifiers::CONTROL) => {
             app_state.list_state.select_next();
@@ -237,8 +237,23 @@ fn handle_input(key: KeyEvent, app_state: &mut AppState) -> FormAction {
         (event::KeyCode::Char('p'), KeyModifiers::CONTROL) => {
             app_state.list_state.select_previous();
         }
+        (event::KeyCode::Right, KeyModifiers::CONTROL) => {
+            expand_task(app_state, &rows, true);
+        }
+        (event::KeyCode::Left, KeyModifiers::CONTROL) => {
+            expand_task(app_state, &rows, false);
+        }
+        (event::KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            delete_task(app_state);
+        }
+        (event::KeyCode::Char('x'), KeyModifiers::CONTROL) => {
+            toggle_state(app_state, &rows);
+        }
         (event::KeyCode::Char(c), KeyModifiers::NONE) => {
             app_state.input_value.push(c);
+        }
+        (event::KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            app_state.input_value.push(c.to_ascii_uppercase());
         }
         _ => {}
     }
@@ -279,17 +294,17 @@ fn render(frame: &mut Frame, app_state: &mut AppState) {
         match row {
             Row::Item(i) => {
                 let item = &app_state.items[*i];
-                let has_subtasks = if item.subtasks.is_empty() {""} else {"*"};
+                let has_subtasks = if item.subtasks.is_empty() {" "} else {if item.expanded {"[-]"} else {"[+]"}};
                 let prefix = if item.is_done { "[x]  " } else { "[] " };
-                let text = format!("{has_subtasks} {prefix}{}", item.description);
-                ListItem::from(if item.is_done { Span::from(text).crossed_out() } else { Span::from(text) })
+                let text = format!(" {prefix}{} {has_subtasks}", item.description);
+                ListItem::from(if item.is_done { Span::from(text).crossed_out().gray() } else { Span::from(text).white() })
             },
             Row::Sub(i, j) => {
                 let sub_marker = if *j == &app_state.items[*i].subtasks.len() - 1 {"└─"} else {"├─"};
                 let sub = &app_state.items[*i].subtasks[*j];
                 let prefix = if sub.is_done { "[x]  " } else { "[] " };
                 let text = format!("  {sub_marker}{prefix}{}", sub.description);
-                ListItem::from(if sub.is_done { Span::from(text).crossed_out() } else { Span::from(text) })
+                ListItem::from(if sub.is_done { Span::from(text).crossed_out().gray() } else { Span::from(text).white() })
             },
         }
     }))
@@ -299,7 +314,7 @@ fn render(frame: &mut Frame, app_state: &mut AppState) {
 
     frame.render_stateful_widget(list, list_area, &mut app_state.list_state);
 
-    Paragraph::new(app_state.input_value.as_str())
+    Paragraph::new(app_state.input_value.as_str().white())
         .block(
             Block::bordered()
                 .title(" Input ".to_span().into_centered_line())
@@ -310,8 +325,8 @@ fn render(frame: &mut Frame, app_state: &mut AppState) {
         .render(input_area, frame.buffer_mut());
 
     let help_text_value = match app_state.active_window {
-        Windows::List => " j/k - navigate, a - new item, x - del item, <enter> - toggle_status ",
-        Input => " <Enter> - submit, <Esc> - Cancel, <Tab> - Cycle Window ",
+        Windows::List => " j/k - navigate, a - new item, d - del item, <enter>/x - toggle_status ",
+        Input => " <Enter> - submit, <Esc> - Cancel, <Tab> - Cycle Window, <C-A> - Add subtask ",
     };
     Paragraph::new(help_text_value.to_span().into_centered_line())
         .render(help_text_area, frame.buffer_mut());
