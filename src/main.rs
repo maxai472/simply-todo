@@ -73,7 +73,7 @@ fn build_rows(items: &[TodoItem]) -> Vec<Row> {
         rows.push(Row::Item(i));
         if item.expanded {
             for j in 0..item.subtasks.len() {
-                rows.push(Row::Sub(j, i));
+                rows.push(Row::Sub(i, j));
             }
         }
     }
@@ -285,9 +285,10 @@ fn render(frame: &mut Frame, app_state: &mut AppState) {
                 ListItem::from(if item.is_done { Span::from(text).crossed_out() } else { Span::from(text) })
             },
             Row::Sub(i, j) => {
+                let sub_marker = if *j == &app_state.items[*i].subtasks.len() - 1 {"└─"} else {"├─"};
                 let sub = &app_state.items[*i].subtasks[*j];
                 let prefix = if sub.is_done { "[x]  " } else { "[] " };
-                let text = format!("  └{prefix}{}", sub.description);
+                let text = format!("  {sub_marker}{prefix}{}", sub.description);
                 ListItem::from(if sub.is_done { Span::from(text).crossed_out() } else { Span::from(text) })
             },
         }
