@@ -6,11 +6,14 @@ use color_eyre::{
 };
 use crossterm::{event::KeyModifiers, terminal::window_size};
 use ratatui::{
-    DefaultTerminal, Frame, crossterm::event::{self, Event, KeyEvent}, layout::{Constraint, Layout}, style::{Color, Style, Stylize}, text::{Span, ToSpan}, widgets::{Block, BorderType, List, ListItem, ListState, Padding, Paragraph, Widget, canvas::MapResolution},
+    DefaultTerminal, Frame, crossterm::event::{self, Event, KeyEvent}, layout::{Constraint, Layout}, macros::row, style::{Color, Style, Stylize}, text::{Span, ToSpan}, widgets::{
+        Block, BorderType, List, ListItem, ListState, Padding, Paragraph, Widget,
+        canvas::MapResolution,
+    },
 };
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::Windows::Input;
+use crate::{Row::Item, Windows::Input};
 
 #[derive(Debug, Default)]
 struct AppState {
@@ -24,6 +27,9 @@ struct AppState {
 struct TodoItem {
     is_done: bool,
     description: String,
+    subtasks: Vec<TodoItem>,
+    #[serde(skip)]
+    expanded: bool,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -37,6 +43,12 @@ enum FormAction {
     None,
     Submit,
     Escape,
+    SubmitSubTask
+}
+
+enum Row {
+    Item(usize),
+    Sub(usize, usize)
 }
 
 fn main() -> Result<()> {
@@ -55,24 +67,45 @@ fn main() -> Result<()> {
     res
 }
 
+fn build_rows(items: &[TodoItem]) -> Vec<Row> {
+    let mut rows = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        rows.push(Row::Item(i));
+        if item.expanded {
+            for j in 0..item.subtasks.len() {
+                rows.push(Row::Sub(j, i));
+            }
+        }
+    }
+    rows
+}
+
+fn selected_item_mut<'a>(items: &'a mut [TodoItem], rows: &[Row], selected: usize) -> Option<&'a mut TodoItem> {
+   match rows.get(selected)? {
+       Row::Item(i) => items.get_mut(*i),
+       Row::Sub(i, j) => items.get_mut(*i)?.subtasks.get_mut(*j),
+    } 
+}
+
 fn save_items(items: &[TodoItem]) -> Result<()> {
-   let json = serde_json::to_string_pretty(items)?; 
-   std::fs::write("todos.json", json)?;
-   Ok(())
+    let json = serde_json::to_string_pretty(items)?;
+    std::fs::write("todos.json", json)?;
+    Ok(())
 }
 
 fn load_items() -> Result<Vec<TodoItem>> {
-   if !std::path::Path::new("todos.json").exists() {
-       return Ok(Vec::new());
-   }
+    if !std::path::Path::new("todos.json").exists() {
+        return Ok(Vec::new());
+    }
 
-   let json = std::fs::read_to_string("todos.json")?;
-   let items = serde_json::from_str(&json)?;
+    let json = std::fs::read_to_string("todos.json")?;
+    let items = serde_json::from_str(&json)?;
 
-   Ok(items)
+    Ok(items)
 }
 
 fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
+    let rows = build_rows(&app_state.items);
     loop {
         // Rendering
         terminal.draw(|f| render(f, app_state))?;
@@ -85,6 +118,8 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
                         app_state.items.push(TodoItem {
                             is_done: false,
                             description: app_state.input_value.clone(),
+                            subtasks: Vec::new(),
+                            expanded: false
                         });
                         app_state.input_value.clear();
                     }
@@ -92,6 +127,19 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
                         app_state.active_window = Windows::List;
                         app_state.input_value.clear();
                     }
+                    FormAction::SubmitSubTask => {
+                        if let Some(index) = app_state.list_state.selected() {
+                            if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
+                                item.subtasks.push(TodoItem{
+                                    is_done: false,
+                                    description: app_state.input_value.clone(),
+                                    subtasks: Vec::new(),
+                                    expanded: false,
+                                });
+                                app_state.input_value.clear();
+                            }
+                        }
+                    },
                 }
             } else {
                 if handle_list(key, app_state) {
@@ -104,6 +152,7 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
 }
 
 fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
+    let rows = build_rows(&app_state.items);
     match key.code {
         event::KeyCode::Esc => {
             return true;
@@ -113,8 +162,22 @@ fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
         }
         event::KeyCode::Enter => {
             if let Some(index) = app_state.list_state.selected() {
-                if let Some(item) = app_state.items.get_mut(index) {
+                if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
                     item.is_done = !item.is_done;
+                }
+            }
+        }
+        event::KeyCode::Right => {
+            if let Some(index) = app_state.list_state.selected() {
+                if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
+                    item.expanded = true;
+                }
+            }
+        }
+        event::KeyCode::Left => {
+            if let Some(index) = app_state.list_state.selected() {
+                if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index)  {
+                    item.expanded = false;
                 }
             }
         }
@@ -130,7 +193,7 @@ fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
             }
             'x' => {
                 if let Some(index) = app_state.list_state.selected() {
-                    if let Some(item) = app_state.items.get_mut(index) {
+                    if let Some(item) =  selected_item_mut(&mut app_state.items, &rows, index) {
                         item.is_done = !item.is_done;
                     }
                 }
@@ -161,6 +224,9 @@ fn handle_input(key: KeyEvent, app_state: &mut AppState) -> FormAction {
         }
         (event::KeyCode::Backspace, _) => {
             app_state.input_value.pop();
+        }
+        (event::KeyCode::Char('a'), event::KeyModifiers::CONTROL) => {
+            return FormAction::SubmitSubTask;
         }
         (event::KeyCode::Enter, _) => {
             return FormAction::Submit;
@@ -208,15 +274,23 @@ fn render(frame: &mut Frame, app_state: &mut AppState) {
         .border_type(BorderType::Rounded)
         .fg(list_colour);
 
-    let list = List::new(app_state.items.iter().map(|x| {
-        let prefix = if x.is_done {"[x]  " } else {"[] "};
-        let text = format!("{prefix}{}", x.description);
-        let value = if x.is_done {
-            Span::from(text).crossed_out()
-        } else {
-            Span::from(text)
-        };
-        ListItem::from(value)
+    let rows = build_rows(&app_state.items);
+    let list = List::new(rows.iter().map(|row| {
+        match row {
+            Row::Item(i) => {
+                let item = &app_state.items[*i];
+                let has_subtasks = if item.subtasks.is_empty() {""} else {"*"};
+                let prefix = if item.is_done { "[x]  " } else { "[] " };
+                let text = format!("{has_subtasks} {prefix}{}", item.description);
+                ListItem::from(if item.is_done { Span::from(text).crossed_out() } else { Span::from(text) })
+            },
+            Row::Sub(i, j) => {
+                let sub = &app_state.items[*i].subtasks[*j];
+                let prefix = if sub.is_done { "[x]  " } else { "[] " };
+                let text = format!("  └{prefix}{}", sub.description);
+                ListItem::from(if sub.is_done { Span::from(text).crossed_out() } else { Span::from(text) })
+            },
+        }
     }))
     .block(list_block)
     .highlight_style(Style::default().fg(Color::Green))
