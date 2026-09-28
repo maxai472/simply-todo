@@ -105,14 +105,14 @@ fn load_items() -> Result<Vec<TodoItem>> {
 }
 
 fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
-    let rows = build_rows(&app_state.items);
     loop {
+        let rows = build_rows(&app_state.items);
         // Rendering
         terminal.draw(|f| render(f, app_state))?;
         // Input Handling
         if let Event::Key(key) = event::read()? {
             if app_state.active_window == Windows::Input {
-                match handle_input(key, app_state) {
+                match handle_input(key, app_state, &rows) {
                     FormAction::None => {}
                     FormAction::Submit => {
                         app_state.items.push(TodoItem {
@@ -142,7 +142,7 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
                     },
                 }
             } else {
-                if handle_list(key, app_state) {
+                if handle_list(key, app_state, &rows) {
                     break;
                 }
             }
@@ -178,8 +178,7 @@ fn delete_task(app_state: &mut AppState, rows: &[Row]) {
     }
 }
 
-fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
-    let rows = build_rows(&app_state.items);
+fn handle_list(key: KeyEvent, app_state: &mut AppState, rows: &[Row]) -> bool {
     match key.code {
         event::KeyCode::Tab => {
             app_state.active_window = Windows::Input;
@@ -217,8 +216,7 @@ fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
     return false;
 }
 
-fn handle_input(key: KeyEvent, app_state: &mut AppState) -> FormAction {
-    let rows = build_rows(&app_state.items);
+fn handle_input(key: KeyEvent, app_state: &mut AppState, rows: &[Row]) -> FormAction {
     match (key.code, key.modifiers) {
         (event::KeyCode::Esc, _) | (event::KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             return FormAction::Escape;
