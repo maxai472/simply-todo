@@ -129,14 +129,16 @@ fn run(mut terminal: DefaultTerminal, app_state: &mut AppState) -> Result<()> {
                     }
                     FormAction::SubmitSubTask => {
                         if let Some(index) = app_state.list_state.selected() {
-                            if let Some(item) = selected_item_mut(&mut app_state.items, &rows, index) {
-                                item.subtasks.push(TodoItem{
-                                    is_done: false,
-                                    description: app_state.input_value.clone(),
-                                    subtasks: Vec::new(),
-                                    expanded: false,
-                                });
-                                app_state.input_value.clear();
+                            if let Some(Row::Item(i) | Row::Sub(i, _)) = rows.get(index) {
+                                if let Some(item) = app_state.items.get_mut(*i) {
+                                    item.subtasks.push(TodoItem{
+                                        is_done: false,
+                                        description: app_state.input_value.clone(),
+                                        subtasks: Vec::new(),
+                                        expanded: false,
+                                    });
+                                    app_state.input_value.clear();
+                                }
                             }
                         }
                     },
