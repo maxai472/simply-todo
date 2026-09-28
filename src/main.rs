@@ -168,9 +168,13 @@ fn expand_task(app_state: & mut AppState, rows: &[Row], expand: bool) {
     }
 }
 
-fn delete_task(app_state: &mut AppState) {
+fn delete_task(app_state: &mut AppState, rows: &[Row]) {
     if let Some(index) = app_state.list_state.selected() {
-        app_state.items.remove(index);
+        match rows.get(index) {
+            Some(Row::Item(i)) => { app_state.items.remove(*i); },
+            Some(Row::Sub(i, j)) => { app_state.items[*i].subtasks.remove(*j); }
+            None => {}
+        }
     }
 }
 
@@ -200,7 +204,7 @@ fn handle_list(key: KeyEvent, app_state: &mut AppState) -> bool {
         }
         event::KeyCode::Char(char) => match char {
             'd' => {
-                delete_task(app_state);
+                delete_task(app_state, &rows);
             }
             'a' => {
                 app_state.active_window = Input;
@@ -244,7 +248,7 @@ fn handle_input(key: KeyEvent, app_state: &mut AppState) -> FormAction {
             expand_task(app_state, &rows, false);
         }
         (event::KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-            delete_task(app_state);
+            delete_task(app_state, &rows);
         }
         (event::KeyCode::Char('x'), KeyModifiers::CONTROL) => {
             toggle_state(app_state, &rows);
