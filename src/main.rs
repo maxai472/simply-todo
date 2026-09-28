@@ -229,11 +229,11 @@ fn handle_input(key: KeyEvent, app_state: &mut AppState, rows: &[Row]) -> FormAc
         (event::KeyCode::Backspace, _) => {
             app_state.input_value.pop();
         }
+        (event::KeyCode::Enter, event::KeyModifiers::CONTROL) => {
+            return FormAction::SubmitSubTask;
+        }
         (event::KeyCode::Enter, _) => {
             return FormAction::Submit;
-        }
-        (event::KeyCode::Char('a'), event::KeyModifiers::CONTROL) => {
-            return FormAction::SubmitSubTask;
         }
         (event::KeyCode::Char('n'), KeyModifiers::CONTROL) => {
             app_state.list_state.select_next();
